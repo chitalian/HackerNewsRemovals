@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert HackerNewsRemovals README.md to CSV format.
+Convert HackerNewsRemovals README.md and archives to CSV format.
 Parses the markdown list of removed stories and outputs as CSV.
 """
 
@@ -9,8 +9,8 @@ import csv
 import sys
 from pathlib import Path
 
-def parse_readme(filepath):
-    """Parse the README.md file and extract story data."""
+def parse_markdown_file(filepath):
+    """Parse a markdown file and extract story data."""
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
 
@@ -20,10 +20,10 @@ def parse_readme(filepath):
     # Pattern for date headers: #### **Day, Month DD, YYYY**
     date_pattern = re.compile(r'####\s*\*\*(\w+,\s+\w+\s+\d+,\s+\d+)\*\*')
 
-    # Pattern for story entries:
-    # * [ID](stats_url) #RANK POINTS points COMMENTS comments -> [TITLE](URL)
+    # Pattern for story entries (handles both URL formats):
+    # * [ID](stats_url or hn_url) #RANK POINTS points COMMENTS comments -> [TITLE](URL)
     story_pattern = re.compile(
-        r'\*\s*\[(\d+)\]\(https://news\.social-protocols\.org/stats\?id=\d+\)\s*'
+        r'\*\s*\[(\d+)\]\(https://(?:news\.social-protocols\.org/stats\?id=|news\.ycombinator\.com/item\?id=)\d+\)\s*'
         r'#(\d+)\s*'
         r'(\d+)\s*points?\s*'
         r'(\d+)\s*comments?\s*'
@@ -67,17 +67,33 @@ def write_csv(stories, output_path):
 def main():
     script_dir = Path(__file__).parent
     readme_path = script_dir / 'README.md'
+    old_dir = script_dir / 'OLD'
     output_path = script_dir / 'removed_stories.csv'
 
-    if not readme_path.exists():
-        print(f"Error: {readme_path} not found", file=sys.stderr)
+    all_stories = []
+
+    # Parse archive files first (oldest to newest)
+    if old_dir.exists():
+        archive_files = sorted(old_dir.glob('ARCHIVE-*.md'))
+        for archive_file in archive_files:
+            print(f"Parsing {archive_file.name}...")
+            stories = parse_markdown_file(archive_file)
+            all_stories.extend(stories)
+            print(f"  Found {len(stories)} stories")
+
+    # Parse current README.md
+    if readme_path.exists():
+        print(f"Parsing README.md...")
+        stories = parse_markdown_file(readme_path)
+        all_stories.extend(stories)
+        print(f"  Found {len(stories)} stories")
+
+    if not all_stories:
+        print("Error: No stories found", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Parsing {readme_path}...")
-    stories = parse_readme(readme_path)
-
-    print(f"Writing {len(stories)} stories to {output_path}...")
-    count = write_csv(stories, output_path)
+    print(f"\nWriting {len(all_stories)} total stories to {output_path}...")
+    count = write_csv(all_stories, output_path)
 
     print(f"Done! {count} stories exported to {output_path}")
 
